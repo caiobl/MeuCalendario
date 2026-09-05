@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Leituras</title>
+	<script src="authGate.js"></script>
+	<link rel="stylesheet" href="mycss.css">
+</head>
+<body>
+	<main class="calendar-app">
+		<header>
+			<div><p class="eyebrow">Minha biblioteca</p><h1>Leituras</h1></div>
+			<div class="header-actions">
+				<button id="add-read" class="add-item" type="button" aria-label="Adicionar leitura">+</button>
+				<div class="menu-container">
+					<button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="main-menu">&larr;</button>
+					<nav id="main-menu" class="main-menu" aria-label="Menu principal" aria-hidden="true">
+						<button type="button" data-menu-action="calendar">Calendário</button>
+						<span class="menu-separator" aria-hidden="true">=</span>
+						<button type="button" data-menu-action="films">Filmes</button>
+						<span class="menu-separator" aria-hidden="true">=</span>
+						<button type="button" data-menu-action="reads">Leituras</button>
+					</nav>
+				</div>
+			</div>
+		</header>
+		<section id="read-grid" class="media-grid" aria-label="Leituras salvas"></section>
+	</main>
+	<dialog id="read-dialog">
+		<form id="read-form" class="media-dialog" method="dialog">
+			<div class="dialog-heading"><h2>Adicionar leitura</h2><button id="close-read-dialog" class="close-button" type="button" aria-label="Fechar">&times;</button></div>
+			<label for="read-name">Nome da leitura</label>
+			<input id="read-name" type="text" placeholder="Digite o nome do livro ou texto..." required>
+			<label for="read-link">Link do arquivo ou site</label>
+			<input id="read-link" type="url" placeholder="https://..." required>
+			<div class="dialog-actions"><button type="submit">Adicionar leitura</button></div>
+		</form>
+	</dialog>
+	<dialog id="read-detail-dialog">
+		<div class="read-detail-dialog">
+			<button id="close-read-detail" class="close-button detail-close" type="button" aria-label="Fechar detalhes">&times;</button>
+			<h2 id="detail-read-title"></h2>
+			<a id="detail-read-link" class="open-link" target="_blank" rel="noopener noreferrer">Abrir arquivo</a>
+			<div>
+				<button id="remove-read" class="remove-item" type="button">Remover leitura</button>
+			</div>
+		</div>
+	</dialog>
+	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+	<script src="supabaseClient.js"></script>
+	<script>
+		const readGrid = document.querySelector('#read-grid');
+		const readDialog = document.querySelector('#read-dialog');
+		const readForm = document.querySelector('#read-form');
+		const readName = document.querySelector('#read-name');
+		const readLink = document.querySelector('#read-link');
+		const readDetailDialog = document.querySelector('#read-detail-dialog');
+		const detailReadTitle = document.querySelector('#detail-read-title');
+		const detailReadLink = document.querySelector('#detail-read-link');
+		const removeReadButton = document.querySelector('#remove-read');
+		let currentReads = [];
+		let selectedReadId = null;
+
+		function escapeHtml(text) {
+			return text.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+		}
+
+		async function renderReads() {
+			const { data, error } = await db.from('reads').select('*').order('created_at', { ascending: true });
+			if (error) { console.error(error); readGrid.innerHTML = '<p class="empty-media">Erro ao carregar leituras.</p>'; return; }
+			currentReads = data;
+			readGrid.innerHTML = data.length ? data.map((read) => `<article class="media-card" data-read-id="${read.id}" tabindex="0" role="button"><div class="media-card-info"><h2>${escapeHtml(read.name)}</h2></div></article>`).join('') : '<p class="empty-media">Nenhuma leitura adicionada ainda.</p>';
+		}
+
+		function openReadDetails(id) {
+			const read = currentReads.find((item) => item.id === id);
+			if (!read) return;
+			selectedReadId = id;
+			detailReadTitle.textContent = read.name;
+			detailReadLink.href = read.link;
+			readDetailDialog.showModal();
+		}
+
+		document.querySelector('#add-read').addEventListener('click', () => { readDialog.showModal(); readName.focus(); });
+		document.querySelector('#close-read-dialog').addEventListener('click', () => readDialog.close());
+		readDialog.addEventListener('click', (event) => { if (event.target === readDialog) readDialog.close(); });
+		readGrid.addEventListener('click', (event) => {
+			const card = event.target.closest('.media-card');
+			if (card) openReadDetails(card.dataset.readId);
+		});
+		readGrid.addEventListener('keydown', (event) => {
+			if (event.key !== 'Enter' && event.key !== ' ') return;
+			const card = event.target.closest('.media-card');
+			if (!card) return;
+			event.preventDefault();
+			openReadDetails(card.dataset.readId);
+		});
+		document.querySelector('#close-read-detail').addEventListener('click', () => readDetailDialog.close());
+		readDetailDialog.addEventListener('click', (event) => { if (event.target === readDetailDialog) readDetailDialog.close(); });
+		removeReadButton.addEventListener('click', async () => {
+			const { error } = await db.from('reads').delete().eq('id', selectedReadId);
+			if (error) { console.error(error); return; }
+			readDetailDialog.close();
+			renderReads();
+		});
+		readForm.addEventListener('submit', async (event) => {
+			event.preventDefault();
+			const { error } = await db.from('reads').insert({ name: readName.value.trim(), link: readLink.value.trim() });
+			if (error) { console.error(error); return; }
+			readName.value = '';
+			readLink.value = '';
+			readDialog.close();
+			renderReads();
+		});
+
+		const menuToggle = document.querySelector('#menu-toggle');
+		const mainMenu = document.querySelector('#main-menu');
+		const menuContainer = document.querySelector('.menu-container');
+		const menuStateKey = 'menu-open';
+
+		function setMenuOpen(isOpen) {
+			menuToggle.setAttribute('aria-expanded', String(isOpen));
+			menuToggle.setAttribute('aria-label', isOpen ? 'Fechar menu' : 'Abrir menu');
+			mainMenu.setAttribute('aria-hidden', String(!isOpen));
+			menuContainer.classList.toggle('menu-open', isOpen);
+			localStorage.setItem(menuStateKey, String(isOpen));
+		}
+
+		function closeMenu() {
+			setMenuOpen(false);
+		}
+
+		menuToggle.addEventListener('click', () => {
+			const isOpen = menuContainer.classList.contains('menu-open');
+			setMenuOpen(!isOpen);
+		});
+		document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
+		document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
+		document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
+		document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });
+		document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
+		if (localStorage.getItem(menuStateKey) === 'true') setMenuOpen(true);
+		renderReads();
+	</script>
+</body>
+</html>
