@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Filmes</title>
+	<script src="authGate.js"></script>
+	<link rel="stylesheet" href="mycss.css">
+</head>
+<body>
+	<main class="calendar-app">
+		<header>
+			<div><p class="eyebrow">Minha lista</p><h1>Filmes</h1></div>
+			<div class="header-actions">
+				<button id="add-film" class="add-item" type="button" aria-label="Adicionar filme">+</button>
+				<div class="menu-container">
+					<button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="main-menu">&larr;</button>
+					<nav id="main-menu" class="main-menu" aria-label="Menu principal" aria-hidden="true">
+						<button type="button" data-menu-action="calendar">Calendário</button>
+						<span class="menu-separator" aria-hidden="true">=</span>
+						<button type="button" data-menu-action="films">Filmes</button>
+						<span class="menu-separator" aria-hidden="true">=</span>
+						<button type="button" data-menu-action="reads">Leituras</button>
+					</nav>
+				</div>
+			</div>
+		</header>
+		<section id="film-grid" class="media-grid" aria-label="Filmes salvos"></section>
+	</main>
+	<dialog id="film-dialog">
+		<form id="film-form" class="media-dialog" method="dialog">
+			<div class="dialog-heading"><h2>Adicionar filme</h2><button id="close-film-dialog" class="close-button" type="button" aria-label="Fechar">&times;</button></div>
+			<label for="film-name">Nome do filme</label>
+			<input id="film-name" type="text" placeholder="Digite o nome do filme..." required>
+			<div class="dialog-actions"><button type="submit">Adicionar filme</button></div>
+		</form>
+	</dialog>
+	<dialog id="film-detail-dialog">
+		<div class="film-detail-dialog">
+			<button id="close-film-detail" class="close-button detail-close" type="button" aria-label="Fechar detalhes">&times;</button>
+			<h2 id="detail-film-title"></h2>
+			<div class="film-detail-layout">
+				<div class="poster-placeholder" id="detail-film-poster">Capa<br><small>API em breve</small></div>
+				<div class="film-detail-copy">
+					<p id="detail-film-description">Descrição será preenchida pela API.</p>
+					<button id="remove-film" class="remove-item" type="button">Remover filme</button>
+				</div>
+			</div>
+		</div>
+	</dialog>
+	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+	<script src="supabaseClient.js"></script>
+	<script>
+		const filmGrid = document.querySelector('#film-grid');
+		const filmDialog = document.querySelector('#film-dialog');
+		const filmForm = document.querySelector('#film-form');
+		const filmName = document.querySelector('#film-name');
+		const filmDetailDialog = document.querySelector('#film-detail-dialog');
+		const detailFilmTitle = document.querySelector('#detail-film-title');
+		const detailFilmDescription = document.querySelector('#detail-film-description');
+		const removeFilmButton = document.querySelector('#remove-film');
+		let currentFilms = [];
+		let selectedFilmId = null;
+
+		function escapeHtml(text) {
+			return text.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+		}
+
+		async function renderFilms() {
+			const { data, error } = await db.from('films').select('*').order('created_at', { ascending: true });
+			if (error) { console.error(error); filmGrid.innerHTML = '<p class="empty-media">Erro ao carregar filmes.</p>'; return; }
+			currentFilms = data;
+			filmGrid.innerHTML = data.length ? data.map((film) => `<article class="media-card" data-film-id="${film.id}" tabindex="0" role="button"><div class="poster-placeholder">Capa<br><small>API em breve</small></div><div class="media-card-info"><h2>${escapeHtml(film.name)}</h2><p>Descrição será preenchida pela API.</p></div></article>`).join('') : '<p class="empty-media">Nenhum filme adicionado ainda.</p>';
+		}
+
+		function openFilmDetails(id) {
+			const film = currentFilms.find((item) => item.id === id);
+			if (!film) return;
+			selectedFilmId = id;
+			detailFilmTitle.textContent = film.name;
+			detailFilmDescription.textContent = film.description || 'Descrição será preenchida pela API.';
+			filmDetailDialog.showModal();
+		}
+
+		document.querySelector('#add-film').addEventListener('click', () => { filmDialog.showModal(); filmName.focus(); });
+		document.querySelector('#close-film-dialog').addEventListener('click', () => filmDialog.close());
+		filmDialog.addEventListener('click', (event) => { if (event.target === filmDialog) filmDialog.close(); });
+		filmGrid.addEventListener('click', (event) => {
+			const card = event.target.closest('.media-card');
+			if (card) openFilmDetails(card.dataset.filmId);
+		});
+		filmGrid.addEventListener('keydown', (event) => {
+			if (event.key !== 'Enter' && event.key !== ' ') return;
+			const card = event.target.closest('.media-card');
+			if (!card) return;
+			event.preventDefault();
+			openFilmDetails(card.dataset.filmId);
+		});
+		document.querySelector('#close-film-detail').addEventListener('click', () => filmDetailDialog.close());
+		filmDetailDialog.addEventListener('click', (event) => { if (event.target === filmDetailDialog) filmDetailDialog.close(); });
+		removeFilmButton.addEventListener('click', async () => {
+			const { error } = await db.from('films').delete().eq('id', selectedFilmId);
+			if (error) { console.error(error); return; }
+			filmDetailDialog.close();
+			renderFilms();
+		});
+		filmForm.addEventListener('submit', async (event) => {
+			event.preventDefault();
+			const { error } = await db.from('films').insert({ name: filmName.value.trim() });
+			if (error) { console.error(error); return; }
+			filmName.value = '';
+			filmDialog.close();
+			renderFilms();
+		});
+
+		const menuToggle = document.querySelector('#menu-toggle');
+		const mainMenu = document.querySelector('#main-menu');
+		const menuContainer = document.querySelector('.menu-container');
+		const menuStateKey = 'menu-open';
+
+		function setMenuOpen(isOpen) {
+			menuToggle.setAttribute('aria-expanded', String(isOpen));
+			menuToggle.setAttribute('aria-label', isOpen ? 'Fechar menu' : 'Abrir menu');
+			mainMenu.setAttribute('aria-hidden', String(!isOpen));
+			menuContainer.classList.toggle('menu-open', isOpen);
+			localStorage.setItem(menuStateKey, String(isOpen));
+		}
+
+		function closeMenu() {
+			setMenuOpen(false);
+		}
+
+		menuToggle.addEventListener('click', () => {
+			const isOpen = menuContainer.classList.contains('menu-open');
+			setMenuOpen(!isOpen);
+		});
+		document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
+		document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
+		document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
+		document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });
+		document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
+		if (localStorage.getItem(menuStateKey) === 'true') setMenuOpen(true);
+		renderFilms();
+	</script>
+</body>
+</html>

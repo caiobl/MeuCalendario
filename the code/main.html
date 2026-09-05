@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Main</title>
+    <script>
+        if (localStorage.getItem('site-unlocked') === 'true') {
+            document.documentElement.classList.add('unlocked');
+        }
+    </script>
+    <link rel="stylesheet" href="mycss.css">
+</head>
+<body class="main-page">
+    <main class="calendar-app">
+        <header>
+            <div><p class="eyebrow">Página inicial</p><h1>Main</h1></div>
+            <div class="header-actions">
+                <div class="menu-container">
+                    <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="main-menu">&larr;</button>
+                    <nav id="main-menu" class="main-menu" aria-label="Menu principal" aria-hidden="true">
+                        <button type="button" data-menu-action="calendar">Calendário</button>
+                        <span class="menu-separator" aria-hidden="true">=</span>
+                        <button type="button" data-menu-action="films">Filmes</button>
+                        <span class="menu-separator" aria-hidden="true">=</span>
+                        <button type="button" data-menu-action="reads">Leituras</button>
+                    </nav>
+                </div>
+            </div>
+        </header>
+        <section class="page-placeholder">
+            <form id="lock-form" class="lock-screen">
+                <button type="submit" class="lock-icon" aria-label="Desbloquear">&#128274;</button>
+                <input id="lock-password" type="password" placeholder="Senha" autocomplete="off" required>
+                <p id="lock-error" class="lock-error" aria-live="polite"></p>
+            </form>
+        </section>
+    </main>
+    <script>
+        const lockForm = document.querySelector('#lock-form');
+        const lockPassword = document.querySelector('#lock-password');
+        const lockError = document.querySelector('#lock-error');
+        const sitePassword = 'Biblioteconomia';
+
+        if (document.documentElement.classList.contains('unlocked')) {
+            lockPassword.removeAttribute('required');
+        } else {
+            lockPassword.focus();
+        }
+
+        lockForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            if (lockPassword.value === sitePassword) {
+                localStorage.setItem('site-unlocked', 'true');
+                document.documentElement.classList.add('unlocked');
+                lockError.textContent = '';
+            } else {
+                lockError.textContent = 'Senha incorreta.';
+                lockPassword.value = '';
+                lockPassword.focus();
+            }
+        });
+
+        const menuToggle = document.querySelector('#menu-toggle');
+        const mainMenu = document.querySelector('#main-menu');
+        const menuContainer = document.querySelector('.menu-container');
+        const menuStateKey = 'menu-open';
+
+        function setMenuOpen(isOpen) {
+            menuToggle.setAttribute('aria-expanded', String(isOpen));
+            menuToggle.setAttribute('aria-label', isOpen ? 'Fechar menu' : 'Abrir menu');
+            mainMenu.setAttribute('aria-hidden', String(!isOpen));
+            menuContainer.classList.toggle('menu-open', isOpen);
+            localStorage.setItem(menuStateKey, String(isOpen));
+        }
+
+        function closeMenu() {
+			setMenuOpen(false);
+        }
+
+        menuToggle.addEventListener('click', () => {
+            const isOpen = menuContainer.classList.contains('menu-open');
+			setMenuOpen(!isOpen);
+        });
+        document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
+        document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
+        document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
+        document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });
+        document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
+        if (localStorage.getItem(menuStateKey) === 'true') setMenuOpen(true);
+    </script>
+</body>
+</html>
