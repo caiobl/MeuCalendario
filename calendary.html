@@ -27,6 +27,8 @@
                         <button type="button" data-menu-action="films">Filmes</button>
                         <span class="menu-separator" aria-hidden="true">=</span>
                         <button type="button" data-menu-action="reads">Leituras</button>
+                        <span class="menu-separator" aria-hidden="true">=</span>
+                        <button type="button" data-menu-action="logout">Sair</button>
                     </nav>
                 </div>
             </div>
@@ -79,6 +81,26 @@
         let activeDay = null;
         let activeNotes = [];
         let editingNoteId = null;
+        const isAdmin = siteRole === 'admin';
+        const holidaysByYear = {};
+
+        async function loadHolidays(year) {
+            if (holidaysByYear[year]) return holidaysByYear[year];
+            try {
+                const response = await fetch(`https://brasilapi.com.br/api/feriados/v1/${year}`);
+                if (!response.ok) throw new Error('Falha ao buscar feriados');
+                holidaysByYear[year] = await response.json();
+            } catch (error) {
+                console.error(error);
+                holidaysByYear[year] = [];
+            }
+            return holidaysByYear[year];
+        }
+
+        function getHoliday(year, month, day, holidays) {
+            const dateKey = formatDateKey(year, month, day);
+            return holidays.find((holiday) => holiday.date === dateKey);
+        }
 
         function setMenuOpen(isOpen) {
             menuToggle.setAttribute('aria-expanded', String(isOpen));
@@ -105,6 +127,13 @@
 
         function escapeHtml(text) {
             return text.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+        }
+
+        // Grows the note textarea to fit its content instead of relying on a fixed
+        // height or a manual drag-resize handle.
+        function autoGrowNoteInput() {
+            noteInput.style.height = 'auto';
+            noteInput.style.height = `${noteInput.scrollHeight}px`;
         }
 
         function getNextEvent() {
@@ -141,7 +170,7 @@
             return `${daysUntil} ${daysUntil === 1 ? 'dia' : 'dias'}`;
         }
 
-        function renderCalendar() {
+        async function renderCalendar() {
             const year = displayedYear;
             const month = displayedMonth;
             const isCurrentMonth = year === currentDate.getFullYear() && month === currentDate.getMonth();
@@ -150,6 +179,9 @@
             const lastVisibleDay = isCurrentMonth ? Math.min(lastDayOfMonth, firstVisibleDay + 29) : lastDayOfMonth;
             const visibleDays = lastVisibleDay - firstVisibleDay + 1;
             const monthName = new Date(year, month).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+            const nextMonth = month === 11 ? 0 : month + 1;
+            const nextMonthYear = month === 11 ? year + 1 : year;
+            const [holidays, nextYearHolidays] = await Promise.all([loadHolidays(year), loadHolidays(nextMonthYear)]);
             monthLabel.textContent = monthName;
             calendarGrid.classList.toggle('five-rows', !isCurrentMonth);
             previousMonthButton.disabled = isCurrentMonth;
@@ -161,26 +193,29 @@
                 const day = firstVisibleDay + dayOffset;
                 const dayElement = document.createElement('button');
                 const notes = getNotesForDate(year, month, day);
-                dayElement.className = isCurrentMonth && day === currentDate.getDate() ? 'day today' : 'day';
+                const holiday = getHoliday(year, month, day, holidays);
+                dayElement.className = ['day', isCurrentMonth && day === currentDate.getDate() ? 'today' : '', holiday ? 'holiday' : ''].filter(Boolean).join(' ');
                 dayElement.type = 'button';
+                const holidayMarker = !isCurrentMonth && holiday ? `<span class="holiday-marker" title="${escapeHtml(holiday.name)}">★</span>` : '';
                 const futureMonthBadge = !isCurrentMonth ? `<span class="future-note-count">${notes.length}</span>` : '';
-                const currentMonthDetails = isCurrentMonth ? `<span class="day-preview">${escapeHtml(notes[0]?.title || 'Nenhum evento')}</span><span class="event-count">${notes.length} ${notes.length === 1 ? 'evento' : 'eventos'}</span>` : '';
-                dayElement.innerHTML = `<span class="day-number">${day}</span><span class="day-name">${new Date(year, month, day).toLocaleDateString('pt-BR', { weekday: 'short' })}</span>${futureMonthBadge}${currentMonthDetails}`;
+                const previewText = holiday ? `🎉 ${holiday.name}` : (notes[0]?.title || 'Nenhum evento');
+                const currentMonthDetails = isCurrentMonth ? `<span class="day-preview">${escapeHtml(previewText)}</span><span class="event-count">${notes.length} ${notes.length === 1 ? 'evento' : 'eventos'}</span>` : '';
+                dayElement.innerHTML = `<span class="day-number">${day}</span><span class="day-name">${new Date(year, month, day).toLocaleDateString('pt-BR', { weekday: 'short' })}</span>${holidayMarker}${futureMonthBadge}${currentMonthDetails}`;
                 dayElement.addEventListener('click', () => openEditor(year, month, day, monthName));
                 calendarGrid.appendChild(dayElement);
             }
 
             if (!isCurrentMonth) {
                 const totalMonthSlots = 35;
-                const nextMonth = month === 11 ? 0 : month + 1;
-                const nextMonthYear = month === 11 ? year + 1 : year;
                 const trailingDays = totalMonthSlots - visibleDays;
 
                 for (let day = 1; day <= trailingDays; day += 1) {
                     const adjacentDay = document.createElement('div');
                     const notes = getNotesForDate(nextMonthYear, nextMonth, day);
-                    adjacentDay.className = 'adjacent-day';
-                    adjacentDay.innerHTML = `<span class="day-number">${day}</span><span class="day-name">${new Date(nextMonthYear, nextMonth, day).toLocaleDateString('pt-BR', { weekday: 'short' })}</span>${notes.length ? `<span class="future-note-count">${notes.length}</span>` : ''}`;
+                    const holiday = getHoliday(nextMonthYear, nextMonth, day, nextYearHolidays);
+                    adjacentDay.className = holiday ? 'adjacent-day holiday' : 'adjacent-day';
+                    const holidayMarker = holiday ? `<span class="holiday-marker" title="${escapeHtml(holiday.name)}">★</span>` : '';
+                    adjacentDay.innerHTML = `<span class="day-number">${day}</span><span class="day-name">${new Date(nextMonthYear, nextMonth, day).toLocaleDateString('pt-BR', { weekday: 'short' })}</span>${holidayMarker}${notes.length ? `<span class="future-note-count">${notes.length}</span>` : ''}`;
                     calendarGrid.appendChild(adjacentDay);
                 }
             }
@@ -229,11 +264,13 @@
         }
 
         function renderNotes() {
-            notesList.innerHTML = activeNotes.length
-                ? activeNotes.map((note) => `<div class="saved-note"><div class="note-row"><button class="note-header" type="button" data-note-id="${note.id}">${escapeHtml(note.title)}</button><span class="note-actions"><button class="edit-note" type="button" data-edit-id="${note.id}">Editar nota</button><button class="delete-note" type="button" data-delete-id="${note.id}">Excluir nota</button></span></div><div class="note-body" hidden>${escapeHtml(note.body)}</div></div>`).join('')
-                : '<p class="empty-notes">Ainda não há notas para este dia.</p>';
+            const holiday = getHoliday(activeYear, activeMonth, activeDay, holidaysByYear[activeYear] || []);
+            const holidayBanner = holiday ? `<p class="holiday-banner">🎉 Feriado: ${escapeHtml(holiday.name)}</p>` : '';
+            notesList.innerHTML = holidayBanner + (activeNotes.length
+                ? activeNotes.map((note) => `<div class="saved-note"><div class="note-row"><p class="note-header">${escapeHtml(note.title)}</p>${isAdmin ? `<span class="note-actions"><button class="edit-note" type="button" data-edit-id="${note.id}">Editar nota</button><button class="delete-note" type="button" data-delete-id="${note.id}">Excluir nota</button></span>` : ''}</div><div class="note-body">${escapeHtml(note.body)}</div></div>`).join('')
+                : '<p class="empty-notes">Ainda não há notas para este dia.</p>');
             noteComposer.hidden = true;
-            createNoteButton.hidden = false;
+            createNoteButton.hidden = !isAdmin;
             editingNoteId = null;
             saveNoteButton.textContent = 'Salvar nota';
         }
@@ -246,8 +283,10 @@
             noteInput.value = '';
             saveNoteButton.textContent = 'Salvar nota';
             noteTitleInput.focus();
+            autoGrowNoteInput();
         });
         cancelNoteButton.addEventListener('click', renderNotes);
+        noteInput.addEventListener('input', autoGrowNoteInput);
         saveNoteButton.addEventListener('click', async () => {
             const title = noteTitleInput.value.trim();
             const body = noteInput.value.trim();
@@ -290,12 +329,9 @@
                 noteInput.value = note.body;
                 saveNoteButton.textContent = 'Salvar alterações';
                 noteTitleInput.focus();
+                autoGrowNoteInput();
                 return;
             }
-            const header = event.target.closest('.note-header');
-            if (!header) return;
-            const body = header.parentElement.querySelector('.note-body');
-            body.hidden = !body.hidden;
         });
         document.querySelector('#close-dialog').addEventListener('click', () => {
             editDialog.close();
@@ -313,6 +349,10 @@
         document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
         document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
         document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
+        document.querySelector('[data-menu-action="logout"]').addEventListener('click', () => {
+            localStorage.removeItem('site-role');
+            window.location.href = 'main.html';
+        });
         document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });
         document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
         if (localStorage.getItem(menuStateKey) === 'true') setMenuOpen(true);

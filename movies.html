@@ -21,28 +21,40 @@
 						<button type="button" data-menu-action="films">Filmes</button>
 						<span class="menu-separator" aria-hidden="true">=</span>
 						<button type="button" data-menu-action="reads">Leituras</button>
+						<span class="menu-separator" aria-hidden="true">=</span>
+						<button type="button" data-menu-action="logout">Sair</button>
 					</nav>
 				</div>
 			</div>
 		</header>
 		<section id="film-grid" class="media-grid" aria-label="Filmes salvos"></section>
+		<p class="tmdb-attribution">Dados de filmes fornecidos por TMDB.</p>
 	</main>
 	<dialog id="film-dialog">
 		<form id="film-form" class="media-dialog" method="dialog">
 			<div class="dialog-heading"><h2>Adicionar filme</h2><button id="close-film-dialog" class="close-button" type="button" aria-label="Fechar">&times;</button></div>
 			<label for="film-name">Nome do filme</label>
-			<input id="film-name" type="text" placeholder="Digite o nome do filme..." required>
+			<div class="autocomplete-wrapper">
+				<input id="film-name" type="text" placeholder="Digite o nome do filme..." autocomplete="off" required>
+				<ul id="film-suggestions" class="autocomplete-list" hidden></ul>
+			</div>
+			<p class="hint">Vamos buscar capa, descrição e duração automaticamente.</p>
 			<div class="dialog-actions"><button type="submit">Adicionar filme</button></div>
 		</form>
 	</dialog>
 	<dialog id="film-detail-dialog">
 		<div class="film-detail-dialog">
 			<button id="close-film-detail" class="close-button detail-close" type="button" aria-label="Fechar detalhes">&times;</button>
-			<h2 id="detail-film-title"></h2>
 			<div class="film-detail-layout">
 				<div class="poster-placeholder" id="detail-film-poster">Capa<br><small>API em breve</small></div>
 				<div class="film-detail-copy">
-					<p id="detail-film-description">Descrição será preenchida pela API.</p>
+					<div class="film-detail-text">
+						<div class="film-title-row">
+							<h2 id="detail-film-title"></h2>
+							<p id="detail-film-meta" class="film-meta"></p>
+						</div>
+						<p id="detail-film-description">Descrição será preenchida pela API.</p>
+					</div>
 					<button id="remove-film" class="remove-item" type="button">Remover filme</button>
 				</div>
 			</div>
@@ -50,6 +62,7 @@
 	</dialog>
 	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 	<script src="supabaseClient.js"></script>
+	<script src="tmdbClient.js"></script>
 	<script>
 		const filmGrid = document.querySelector('#film-grid');
 		const filmDialog = document.querySelector('#film-dialog');
@@ -58,19 +71,160 @@
 		const filmDetailDialog = document.querySelector('#film-detail-dialog');
 		const detailFilmTitle = document.querySelector('#detail-film-title');
 		const detailFilmDescription = document.querySelector('#detail-film-description');
+		const detailFilmMeta = document.querySelector('#detail-film-meta');
+		const detailFilmPoster = document.querySelector('#detail-film-poster');
 		const removeFilmButton = document.querySelector('#remove-film');
 		let currentFilms = [];
 		let selectedFilmId = null;
+		const filmSuggestions = document.querySelector('#film-suggestions');
+		let selectedTmdbId = null;
+		let suggestionDebounceTimer = null;
+		let suggestionRequestId = 0;
+		let currentSuggestions = [];
+		let activeSuggestionIndex = -1;
+		const isAdmin = siteRole === 'admin';
+		document.querySelector('#add-film').hidden = !isAdmin;
+		removeFilmButton.hidden = !isAdmin;
 
 		function escapeHtml(text) {
 			return text.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+		}
+
+		async function fetchFilmFromTmdb(query) {
+			if (!TMDB_API_KEY || TMDB_API_KEY.includes('PASTE_YOUR')) return null;
+			try {
+				const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=pt-BR&query=${encodeURIComponent(query)}`;
+				const searchResponse = await fetch(searchUrl);
+				const searchData = await searchResponse.json();
+				const bestMatch = searchData.results?.[0];
+				if (!bestMatch) return null;
+				const detailsUrl = `https://api.themoviedb.org/3/movie/${bestMatch.id}?api_key=${TMDB_API_KEY}&language=pt-BR`;
+				const detailsResponse = await fetch(detailsUrl);
+				const details = await detailsResponse.json();
+				return {
+					id: details.id,
+					title: details.title || bestMatch.title,
+					overview: details.overview,
+					poster_path: details.poster_path,
+					release_date: details.release_date,
+					runtime: details.runtime
+				};
+			} catch (error) {
+				console.error(error);
+				return null;
+			}
+		}
+
+		async function fetchFilmDetailsById(tmdbId) {
+			if (!TMDB_API_KEY || TMDB_API_KEY.includes('PASTE_YOUR')) return null;
+			try {
+				const detailsUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=pt-BR`;
+				const detailsResponse = await fetch(detailsUrl);
+				const details = await detailsResponse.json();
+				return {
+					id: details.id,
+					title: details.title,
+					overview: details.overview,
+					poster_path: details.poster_path,
+					release_date: details.release_date,
+					runtime: details.runtime
+				};
+			} catch (error) {
+				console.error(error);
+				return null;
+			}
+		}
+
+		// Searches TMDB in both Portuguese and English and merges the results by id,
+		// so a title typed in either language turns up as a suggestion.
+		async function fetchMovieSuggestions(query) {
+			if (!TMDB_API_KEY || TMDB_API_KEY.includes('PASTE_YOUR')) return [];
+			const requestId = ++suggestionRequestId;
+			try {
+				const [ptResponse, enResponse] = await Promise.all([
+					fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=pt-BR&query=${encodeURIComponent(query)}`),
+					fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=en-US&query=${encodeURIComponent(query)}`)
+				]);
+				const [ptData, enData] = await Promise.all([ptResponse.json(), enResponse.json()]);
+				if (requestId !== suggestionRequestId) return null; // a newer keystroke already started a fresher search
+				const merged = new Map();
+				for (const movie of enData.results || []) {
+					merged.set(movie.id, { id: movie.id, en_title: movie.title, original_title: movie.original_title, release_date: movie.release_date, popularity: movie.popularity || 0 });
+				}
+				for (const movie of ptData.results || []) {
+					const existing = merged.get(movie.id) || {};
+					merged.set(movie.id, { ...existing, id: movie.id, pt_title: movie.title, original_title: movie.original_title, release_date: movie.release_date, popularity: Math.max(existing.popularity || 0, movie.popularity || 0) });
+				}
+				return Array.from(merged.values())
+					.sort((a, b) => b.popularity - a.popularity)
+					.slice(0, 8);
+			} catch (error) {
+				console.error(error);
+				return [];
+			}
+		}
+
+		function renderSuggestions(list) {
+			currentSuggestions = list;
+			activeSuggestionIndex = -1;
+			if (!list.length) {
+				filmSuggestions.hidden = true;
+				filmSuggestions.innerHTML = '';
+				return;
+			}
+			filmSuggestions.innerHTML = list.map((movie, index) => {
+				const primary = movie.pt_title || movie.en_title || movie.original_title || 'Sem título';
+				const secondaryParts = [];
+				if (movie.original_title && movie.original_title !== primary) secondaryParts.push(movie.original_title);
+				if (movie.release_date) secondaryParts.push(movie.release_date.slice(0, 4));
+				const secondary = secondaryParts.join(' • ');
+				return `<li class="autocomplete-item" data-index="${index}">${escapeHtml(primary)}${secondary ? `<span class="autocomplete-sub">${escapeHtml(secondary)}</span>` : ''}</li>`;
+			}).join('');
+			filmSuggestions.hidden = false;
+		}
+
+		function updateActiveSuggestion() {
+			[...filmSuggestions.children].forEach((child, index) => {
+				child.classList.toggle('active', index === activeSuggestionIndex);
+			});
+		}
+
+		function selectSuggestion(index) {
+			const movie = currentSuggestions[index];
+			if (!movie) return;
+			filmName.value = movie.pt_title || movie.en_title || movie.original_title || '';
+			selectedTmdbId = movie.id;
+			filmSuggestions.hidden = true;
+			filmSuggestions.innerHTML = '';
+			currentSuggestions = [];
+		}
+
+		// Converts a total-minutes runtime (e.g. 96) into "H:MM" (e.g. "1:36").
+		function formatRuntime(totalMinutes) {
+			if (!totalMinutes && totalMinutes !== 0) return null;
+			const hours = Math.floor(totalMinutes / 60);
+			const minutes = totalMinutes % 60;
+			return `${hours}:${String(minutes).padStart(2, '0')}`;
+		}
+
+		function filmMetaLine(film) {
+			return [
+				film.release_date ? film.release_date.slice(0, 4) : null,
+				formatRuntime(film.runtime_minutes)
+			].filter(Boolean).join(' • ');
 		}
 
 		async function renderFilms() {
 			const { data, error } = await db.from('films').select('*').order('created_at', { ascending: true });
 			if (error) { console.error(error); filmGrid.innerHTML = '<p class="empty-media">Erro ao carregar filmes.</p>'; return; }
 			currentFilms = data;
-			filmGrid.innerHTML = data.length ? data.map((film) => `<article class="media-card" data-film-id="${film.id}" tabindex="0" role="button"><div class="poster-placeholder">Capa<br><small>API em breve</small></div><div class="media-card-info"><h2>${escapeHtml(film.name)}</h2><p>Descrição será preenchida pela API.</p></div></article>`).join('') : '<p class="empty-media">Nenhum filme adicionado ainda.</p>';
+			filmGrid.innerHTML = data.length ? data.map((film) => {
+				const poster = film.poster_path
+					? `<img class="poster-image" src="${TMDB_IMAGE_BASE}${film.poster_path}" alt="Capa de ${escapeHtml(film.name)}" loading="lazy">`
+					: '<div class="poster-placeholder">Capa<br><small>Não encontrada</small></div>';
+				const meta = filmMetaLine(film);
+				return `<article class="media-card" data-film-id="${film.id}" tabindex="0" role="button">${poster}<div class="media-card-info"><h2>${escapeHtml(film.name)}</h2><p>${escapeHtml(meta || 'Sem informações adicionais')}</p></div></article>`;
+			}).join('') : '<p class="empty-media">Nenhum filme adicionado ainda.</p>';
 		}
 
 		function openFilmDetails(id) {
@@ -78,13 +232,67 @@
 			if (!film) return;
 			selectedFilmId = id;
 			detailFilmTitle.textContent = film.name;
-			detailFilmDescription.textContent = film.description || 'Descrição será preenchida pela API.';
+			detailFilmDescription.textContent = film.description || 'Sem descrição disponível.';
+			detailFilmMeta.textContent = filmMetaLine(film);
+			detailFilmPoster.innerHTML = film.poster_path
+				? `<img class="poster-image" src="${TMDB_IMAGE_BASE}${film.poster_path}" alt="Capa de ${escapeHtml(film.name)}">`
+				: 'Capa<br><small>Não encontrada</small>';
 			filmDetailDialog.showModal();
 		}
 
-		document.querySelector('#add-film').addEventListener('click', () => { filmDialog.showModal(); filmName.focus(); });
+		document.querySelector('#add-film').addEventListener('click', () => {
+			filmName.value = '';
+			selectedTmdbId = null;
+			filmSuggestions.hidden = true;
+			filmSuggestions.innerHTML = '';
+			filmDialog.showModal();
+			filmName.focus();
+		});
 		document.querySelector('#close-film-dialog').addEventListener('click', () => filmDialog.close());
 		filmDialog.addEventListener('click', (event) => { if (event.target === filmDialog) filmDialog.close(); });
+
+		filmName.addEventListener('input', () => {
+			selectedTmdbId = null;
+			const query = filmName.value.trim();
+			clearTimeout(suggestionDebounceTimer);
+			if (query.length < 2) {
+				filmSuggestions.hidden = true;
+				filmSuggestions.innerHTML = '';
+				currentSuggestions = [];
+				return;
+			}
+			suggestionDebounceTimer = setTimeout(async () => {
+				const results = await fetchMovieSuggestions(query);
+				if (results === null) return;
+				renderSuggestions(results);
+			}, 350);
+		});
+		filmName.addEventListener('keydown', (event) => {
+			if (filmSuggestions.hidden || !currentSuggestions.length) return;
+			if (event.key === 'ArrowDown') {
+				event.preventDefault();
+				activeSuggestionIndex = Math.min(activeSuggestionIndex + 1, currentSuggestions.length - 1);
+				updateActiveSuggestion();
+			} else if (event.key === 'ArrowUp') {
+				event.preventDefault();
+				activeSuggestionIndex = Math.max(activeSuggestionIndex - 1, 0);
+				updateActiveSuggestion();
+			} else if (event.key === 'Enter' && activeSuggestionIndex >= 0) {
+				event.preventDefault();
+				selectSuggestion(activeSuggestionIndex);
+			} else if (event.key === 'Escape') {
+				filmSuggestions.hidden = true;
+			}
+		});
+		filmSuggestions.addEventListener('mousedown', (event) => {
+			const item = event.target.closest('.autocomplete-item');
+			if (!item) return;
+			event.preventDefault();
+			selectSuggestion(Number(item.dataset.index));
+		});
+		document.addEventListener('click', (event) => {
+			if (!event.target.closest('.autocomplete-wrapper')) filmSuggestions.hidden = true;
+		});
 		filmGrid.addEventListener('click', (event) => {
 			const card = event.target.closest('.media-card');
 			if (card) openFilmDetails(card.dataset.filmId);
@@ -106,7 +314,22 @@
 		});
 		filmForm.addEventListener('submit', async (event) => {
 			event.preventDefault();
-			const { error } = await db.from('films').insert({ name: filmName.value.trim() });
+			const submitButton = filmForm.querySelector('button[type="submit"]');
+			const name = filmName.value.trim();
+			submitButton.disabled = true;
+			submitButton.textContent = 'Buscando...';
+			const tmdbFilm = selectedTmdbId ? await fetchFilmDetailsById(selectedTmdbId) : await fetchFilmFromTmdb(name);
+			selectedTmdbId = null;
+			const { error } = await db.from('films').insert({
+				name: tmdbFilm?.title || name,
+				description: tmdbFilm?.overview || null,
+				poster_path: tmdbFilm?.poster_path || null,
+				release_date: tmdbFilm?.release_date || null,
+				runtime_minutes: tmdbFilm?.runtime || null,
+				tmdb_id: tmdbFilm?.id || null
+			});
+			submitButton.disabled = false;
+			submitButton.textContent = 'Adicionar filme';
 			if (error) { console.error(error); return; }
 			filmName.value = '';
 			filmDialog.close();
@@ -137,6 +360,10 @@
 		document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
 		document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
 		document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
+		document.querySelector('[data-menu-action="logout"]').addEventListener('click', () => {
+			localStorage.removeItem('site-role');
+			window.location.href = 'main.html';
+		});
 		document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });
 		document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
 		if (localStorage.getItem(menuStateKey) === 'true') setMenuOpen(true);

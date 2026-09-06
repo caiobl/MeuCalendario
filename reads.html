@@ -21,6 +21,8 @@
 						<button type="button" data-menu-action="films">Filmes</button>
 						<span class="menu-separator" aria-hidden="true">=</span>
 						<button type="button" data-menu-action="reads">Leituras</button>
+						<span class="menu-separator" aria-hidden="true">=</span>
+						<button type="button" data-menu-action="logout">Sair</button>
 					</nav>
 				</div>
 			</div>
@@ -61,6 +63,9 @@
 		const removeReadButton = document.querySelector('#remove-read');
 		let currentReads = [];
 		let selectedReadId = null;
+		const isAdmin = siteRole === 'admin';
+		document.querySelector('#add-read').hidden = !isAdmin;
+		removeReadButton.hidden = !isAdmin;
 
 		function escapeHtml(text) {
 			return text.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
@@ -138,6 +143,10 @@
 		document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
 		document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
 		document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
+		document.querySelector('[data-menu-action="logout"]').addEventListener('click', () => {
+			localStorage.removeItem('site-role');
+			window.location.href = 'main.html';
+		});
 		document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });
 		document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
 		if (localStorage.getItem(menuStateKey) === 'true') setMenuOpen(true);

@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Main</title>
     <script>
-        if (localStorage.getItem('site-unlocked') === 'true') {
+        const savedRole = localStorage.getItem('site-role');
+        if (savedRole === 'viewer' || savedRole === 'admin') {
             document.documentElement.classList.add('unlocked');
         }
     </script>
@@ -24,6 +25,8 @@
                         <button type="button" data-menu-action="films">Filmes</button>
                         <span class="menu-separator" aria-hidden="true">=</span>
                         <button type="button" data-menu-action="reads">Leituras</button>
+                        <span class="menu-separator" aria-hidden="true">=</span>
+                        <button type="button" data-menu-action="logout">Sair</button>
                     </nav>
                 </div>
             </div>
@@ -40,7 +43,7 @@
         const lockForm = document.querySelector('#lock-form');
         const lockPassword = document.querySelector('#lock-password');
         const lockError = document.querySelector('#lock-error');
-        const sitePassword = 'Biblioteconomia';
+        const roleByPassword = { Biblioteconomia: 'viewer', Representantes: 'admin' };
 
         if (document.documentElement.classList.contains('unlocked')) {
             lockPassword.removeAttribute('required');
@@ -50,8 +53,9 @@
 
         lockForm.addEventListener('submit', (event) => {
             event.preventDefault();
-            if (lockPassword.value === sitePassword) {
-                localStorage.setItem('site-unlocked', 'true');
+            const role = roleByPassword[lockPassword.value];
+            if (role) {
+                localStorage.setItem('site-role', role);
                 document.documentElement.classList.add('unlocked');
                 lockError.textContent = '';
             } else {
@@ -85,6 +89,10 @@
         document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
         document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
         document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
+        document.querySelector('[data-menu-action="logout"]').addEventListener('click', () => {
+            localStorage.removeItem('site-role');
+            window.location.href = 'main.html';
+        });
         document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });
         document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
         if (localStorage.getItem(menuStateKey) === 'true') setMenuOpen(true);

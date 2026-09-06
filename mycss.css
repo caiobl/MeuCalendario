@@ -318,6 +318,14 @@ html.unlocked .main-page .lock-screen {
 	font-size: .62rem;
 }
 
+.poster-image {
+	display: block;
+	width: 100%;
+	aspect-ratio: 2 / 3;
+	object-fit: cover;
+	background: #171717;
+}
+
 .media-card-info {
 	min-height: 58px;
 	padding: 10px;
@@ -365,10 +373,68 @@ html.unlocked .main-page .lock-screen {
 	margin-top: 16px;
 }
 
+.autocomplete-wrapper {
+	position: relative;
+}
+
+.autocomplete-list {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	z-index: 20;
+	margin: 4px 0 0;
+	padding: 0;
+	max-height: 220px;
+	overflow-y: auto;
+	border: 1px solid var(--line);
+	background: #0b0b0b;
+	list-style: none;
+}
+
+.autocomplete-list[hidden] {
+	display: none;
+}
+
+.autocomplete-item {
+	padding: 8px 12px;
+	color: var(--foreground);
+	font-size: .85rem;
+	cursor: pointer;
+}
+
+.autocomplete-sub {
+	display: block;
+	margin-top: 2px;
+	color: var(--muted);
+	font-size: .7rem;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+	background: var(--soft-white);
+	color: #000;
+}
+
+.autocomplete-item:hover .autocomplete-sub,
+.autocomplete-item.active .autocomplete-sub {
+	color: #333;
+}
+
+#film-detail-dialog {
+	width: min(860px, calc(100vw - 32px));
+	height: min(620px, calc(100vh - 96px));
+	overflow-x: hidden;
+	overflow-y: auto;
+}
+
 .film-detail-dialog {
 	position: relative;
-	width: min(700px, calc(100vw - 32px));
-	padding: 24px;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100%;
+	padding: 28px 28px 40px;
 }
 
 .detail-close {
@@ -377,30 +443,62 @@ html.unlocked .main-page .lock-screen {
 	right: 16px;
 }
 
-.film-detail-dialog h2 {
-	max-width: calc(100% - 48px);
-	margin: 0 48px 22px 0;
+.film-title-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	flex-shrink: 0;
+	gap: 6px 16px;
+	margin: 0 0 14px;
+	padding-right: 40px;
+}
+
+.film-title-row h2 {
+	margin: 0;
 	overflow-wrap: anywhere;
-	font-size: 1.6rem;
+	font-size: 1.3rem;
+	line-height: 1.25;
 }
 
 .film-detail-layout {
 	display: grid;
-	grid-template-columns: minmax(150px, 210px) minmax(0, 1fr);
-	gap: 24px;
-	align-items: start;
+	grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+	grid-template-rows: minmax(0, 1fr);
+	align-items: stretch;
+	gap: 28px;
+	flex: 1;
+	min-height: 0;
 }
 
 .film-detail-layout .poster-placeholder {
 	width: 100%;
+	height: 100%;
+}
+
+.film-detail-layout .poster-image {
+	height: 100%;
+	aspect-ratio: auto;
 }
 
 .film-detail-copy {
 	display: flex;
-	min-height: 100%;
+	height: 100%;
 	flex-direction: column;
 	justify-content: space-between;
-	gap: 24px;
+	gap: 16px;
+	min-height: 0;
+}
+
+.film-detail-copy > .film-detail-text {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+}
+
+.film-detail-copy .remove-item {
+	flex-shrink: 0;
 }
 
 .film-detail-copy p {
@@ -408,6 +506,33 @@ html.unlocked .main-page .lock-screen {
 	color: #ddd;
 	line-height: 1.5;
 	overflow-wrap: anywhere;
+}
+
+.film-detail-copy p.film-meta {
+	flex-shrink: 0;
+	margin: 0;
+	color: var(--muted);
+	font-size: .8rem;
+	letter-spacing: .04em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+#detail-film-description {
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 12;
+	line-clamp: 12;
+}
+
+.tmdb-attribution {
+	margin: 14px 0 0;
+	color: var(--muted);
+	font-size: .68rem;
+	text-align: right;
 }
 
 .remove-item {
@@ -553,6 +678,30 @@ html.unlocked .main-page .lock-screen {
 	line-height: 1;
 }
 
+.holiday-marker {
+	position: absolute;
+	bottom: 7px;
+	right: 8px;
+	color: #ffd166;
+	font-size: .7rem;
+	line-height: 1;
+}
+
+.day.holiday,
+.adjacent-day.holiday {
+	background: rgba(255, 209, 102, .07);
+}
+
+.holiday-banner {
+	margin: 0 0 16px;
+	padding: 10px 12px;
+	border: 1px solid #7a6a2f;
+	background: rgba(255, 209, 102, .08);
+	color: #ffd166;
+	font-size: .85rem;
+	font-weight: 600;
+}
+
 .day:hover .day-name,
 .day:focus-visible .day-name {
 	color: #555;
@@ -624,6 +773,13 @@ dialog {
 	padding: 0;
 	background: #0b0b0b;
 	color: #fff;
+}
+
+#edit-dialog {
+	/* Tall enough to fit the notes list plus the note composer (title + body +
+	   actions) without needing to scroll the whole dialog; the notes list itself
+	   still scrolls internally past 220px, so this stays a fixed, predictable cap. */
+	max-height: min(720px, calc(100vh - 64px));
 }
 
 dialog::backdrop {
@@ -700,25 +856,13 @@ dialog::backdrop {
 }
 
 .note-header {
-	display: block;
 	flex: 1;
 	width: 100%;
-	transform: translateY(2px);
-	border: 0;
-	padding: 0;
-	background: transparent;
+	margin: 0;
 	color: #fff;
-	font: inherit;
 	font-weight: 600;
 	text-align: left;
 	overflow-wrap: anywhere;
-	cursor: pointer;
-}
-
-.note-header:hover,
-.note-header:focus-visible {
-	color: #aaa;
-	outline: 0;
 }
 
 .edit-note {
@@ -801,8 +945,9 @@ label {
 }
 
 #note-input {
-	min-height: 150px;
-	resize: vertical;
+	min-height: 75px;
+	overflow: hidden;
+	resize: none;
 }
 
 #note-title-input:focus,
