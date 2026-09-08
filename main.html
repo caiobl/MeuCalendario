@@ -6,7 +6,7 @@
     <title>Main</title>
     <script>
         const savedRole = localStorage.getItem('site-role');
-        if (savedRole === 'viewer' || savedRole === 'admin') {
+        if (savedRole === 'viewer') {
             document.documentElement.classList.add('unlocked');
         }
     </script>
@@ -39,25 +39,45 @@
             </form>
         </section>
     </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="supabaseClient.js"></script>
     <script>
+        // Único usuário admin real, criado no painel do Supabase (Authentication > Users).
+        // TROQUE para o e-mail exato que você usar lá.
+        const ADMIN_EMAIL = 'mistojrjunior@gmail.com';
+
         const lockForm = document.querySelector('#lock-form');
         const lockPassword = document.querySelector('#lock-password');
         const lockError = document.querySelector('#lock-error');
-        const roleByPassword = { Biblioteconomia: 'viewer', Representantes: 'admin' };
 
-        if (document.documentElement.classList.contains('unlocked')) {
-            lockPassword.removeAttribute('required');
-        } else {
-            lockPassword.focus();
+        async function checkExistingSession() {
+            const { data: { session } } = await db.auth.getSession();
+            if (session) {
+                document.documentElement.classList.add('unlocked');
+                lockPassword.removeAttribute('required');
+            } else if (document.documentElement.classList.contains('unlocked')) {
+                lockPassword.removeAttribute('required');
+            } else {
+                lockPassword.focus();
+            }
         }
+        checkExistingSession();
 
-        lockForm.addEventListener('submit', (event) => {
+        lockForm.addEventListener('submit', async (event) => {
             event.preventDefault();
-            const role = roleByPassword[lockPassword.value];
-            if (role) {
-                localStorage.setItem('site-role', role);
+            const enteredValue = lockPassword.value;
+
+            if (enteredValue === 'Biblioteconomia') {
+                localStorage.setItem('site-role', 'viewer');
                 document.documentElement.classList.add('unlocked');
                 lockError.textContent = '';
+                return;
+            }
+
+            lockError.textContent = '';
+            const { error } = await db.auth.signInWithPassword({ email: ADMIN_EMAIL, password: enteredValue });
+            if (!error) {
+                document.documentElement.classList.add('unlocked');
             } else {
                 lockError.textContent = 'Senha incorreta.';
                 lockPassword.value = '';
@@ -89,8 +109,9 @@
         document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
         document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
         document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
-        document.querySelector('[data-menu-action="logout"]').addEventListener('click', () => {
+        document.querySelector('[data-menu-action="logout"]').addEventListener('click', async () => {
             localStorage.removeItem('site-role');
+            await db.auth.signOut();
             window.location.href = 'main.html';
         });
         document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });

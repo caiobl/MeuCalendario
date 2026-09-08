@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calendário mensal</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="supabaseClient.js"></script>
     <script src="authGate.js"></script>
     <link rel="stylesheet" href="mycss.css">
 </head>
@@ -42,7 +44,7 @@
         <div class="dialog-content">
             <div class="dialog-heading"><h2 id="dialog-title">Editar dia</h2><button id="close-dialog" class="close-button" type="button" aria-label="Fechar editor">&times;</button></div>
             <div id="notes-list" class="notes-list"></div>
-            <button id="create-note" type="button">Criar nota</button>
+            <button id="create-note" type="button" hidden>Criar nota</button>
             <div id="note-composer" hidden>
                 <label for="note-title-input">Título da nota</label>
                 <input id="note-title-input" type="text" placeholder="Dê um título para esta nota...">
@@ -52,8 +54,6 @@
             </div>
         </div>
     </dialog>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="supabaseClient.js"></script>
     <script>
         const calendarGrid = document.querySelector('#calendar-grid');
         const monthLabel = document.querySelector('#month-label');
@@ -81,7 +81,8 @@
         let activeDay = null;
         let activeNotes = [];
         let editingNoteId = null;
-        const isAdmin = siteRole === 'admin';
+        let isAdmin = false;
+        authReady.then((result) => { isAdmin = result.isAdmin; });
         const holidaysByYear = {};
 
         async function loadHolidays(year) {
@@ -349,8 +350,9 @@
         document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
         document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
         document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
-        document.querySelector('[data-menu-action="logout"]').addEventListener('click', () => {
+        document.querySelector('[data-menu-action="logout"]').addEventListener('click', async () => {
             localStorage.removeItem('site-role');
+            await db.auth.signOut();
             window.location.href = 'main.html';
         });
         document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });

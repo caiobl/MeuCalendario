@@ -4,6 +4,8 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Leituras</title>
+	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+	<script src="supabaseClient.js"></script>
 	<script src="authGate.js"></script>
 	<link rel="stylesheet" href="mycss.css">
 </head>
@@ -12,7 +14,7 @@
 		<header>
 			<div><p class="eyebrow">Minha biblioteca</p><h1>Leituras</h1></div>
 			<div class="header-actions">
-				<button id="add-read" class="add-item" type="button" aria-label="Adicionar leitura">+</button>
+				<button id="add-read" class="add-item" type="button" aria-label="Adicionar leitura" hidden>+</button>
 				<div class="menu-container">
 					<button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="main-menu">&larr;</button>
 					<nav id="main-menu" class="main-menu" aria-label="Menu principal" aria-hidden="true">
@@ -49,12 +51,10 @@
 			<h2 id="detail-read-title"></h2>
 			<a id="detail-read-link" class="open-link" target="_blank" rel="noopener noreferrer">Abrir arquivo</a>
 			<div>
-				<button id="remove-read" class="remove-item" type="button">Remover leitura</button>
+				<button id="remove-read" class="remove-item" type="button" hidden>Remover leitura</button>
 			</div>
 		</div>
 	</dialog>
-	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-	<script src="supabaseClient.js"></script>
 	<script>
 		const readGrid = document.querySelector('#read-grid');
 		const readDialog = document.querySelector('#read-dialog');
@@ -69,9 +69,12 @@
 		const removeReadButton = document.querySelector('#remove-read');
 		let currentReads = [];
 		let selectedReadId = null;
-		const isAdmin = siteRole === 'admin';
-		document.querySelector('#add-read').hidden = !isAdmin;
-		removeReadButton.hidden = !isAdmin;
+		let isAdmin = false;
+		authReady.then((result) => {
+			isAdmin = result.isAdmin;
+			document.querySelector('#add-read').hidden = !isAdmin;
+			removeReadButton.hidden = !isAdmin;
+		});
 
 		function escapeHtml(text) {
 			return text.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
@@ -191,8 +194,9 @@
 		document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
 		document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
 		document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
-		document.querySelector('[data-menu-action="logout"]').addEventListener('click', () => {
+		document.querySelector('[data-menu-action="logout"]').addEventListener('click', async () => {
 			localStorage.removeItem('site-role');
+			await db.auth.signOut();
 			window.location.href = 'main.html';
 		});
 		document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });

@@ -4,6 +4,8 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Filmes</title>
+	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+	<script src="supabaseClient.js"></script>
 	<script src="authGate.js"></script>
 	<link rel="stylesheet" href="mycss.css">
 </head>
@@ -12,7 +14,7 @@
 		<header>
 			<div><p class="eyebrow">Minha lista</p><h1>Filmes</h1></div>
 			<div class="header-actions">
-				<button id="add-film" class="add-item" type="button" aria-label="Adicionar filme">+</button>
+				<button id="add-film" class="add-item" type="button" aria-label="Adicionar filme" hidden>+</button>
 				<div class="menu-container">
 					<button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="main-menu">&larr;</button>
 					<nav id="main-menu" class="main-menu" aria-label="Menu principal" aria-hidden="true">
@@ -55,13 +57,11 @@
 						</div>
 						<p id="detail-film-description">Descrição será preenchida pela API.</p>
 					</div>
-					<button id="remove-film" class="remove-item" type="button">Remover filme</button>
+					<button id="remove-film" class="remove-item" type="button" hidden>Remover filme</button>
 				</div>
 			</div>
 		</div>
 	</dialog>
-	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-	<script src="supabaseClient.js"></script>
 	<script src="tmdbClient.js"></script>
 	<script>
 		const filmGrid = document.querySelector('#film-grid');
@@ -82,9 +82,12 @@
 		let suggestionRequestId = 0;
 		let currentSuggestions = [];
 		let activeSuggestionIndex = -1;
-		const isAdmin = siteRole === 'admin';
-		document.querySelector('#add-film').hidden = !isAdmin;
-		removeFilmButton.hidden = !isAdmin;
+		let isAdmin = false;
+		authReady.then((result) => {
+			isAdmin = result.isAdmin;
+			document.querySelector('#add-film').hidden = !isAdmin;
+			removeFilmButton.hidden = !isAdmin;
+		});
 
 		function escapeHtml(text) {
 			return text.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
@@ -360,8 +363,9 @@
 		document.querySelector('[data-menu-action="calendar"]').addEventListener('click', () => { window.location.href = 'calendary.html'; });
 		document.querySelector('[data-menu-action="films"]').addEventListener('click', () => { window.location.href = 'movies.html'; });
 		document.querySelector('[data-menu-action="reads"]').addEventListener('click', () => { window.location.href = 'reads.html'; });
-		document.querySelector('[data-menu-action="logout"]').addEventListener('click', () => {
+		document.querySelector('[data-menu-action="logout"]').addEventListener('click', async () => {
 			localStorage.removeItem('site-role');
+			await db.auth.signOut();
 			window.location.href = 'main.html';
 		});
 		document.addEventListener('click', (event) => { if (!menuContainer.contains(event.target)) closeMenu(); });
