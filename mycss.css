@@ -29,6 +29,15 @@ body {
 	margin: 0 auto;
 }
 
+.calendar-app.page-scrolls {
+	height: auto;
+	min-height: 80vh;
+}
+
+.calendar-app.page-scrolls .media-grid {
+	overflow-y: visible;
+}
+
 header {
 	display: flex;
 	align-items: end;
