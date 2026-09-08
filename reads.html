@@ -34,8 +34,12 @@
 			<div class="dialog-heading"><h2>Adicionar leitura</h2><button id="close-read-dialog" class="close-button" type="button" aria-label="Fechar">&times;</button></div>
 			<label for="read-name">Nome da leitura</label>
 			<input id="read-name" type="text" placeholder="Digite o nome do livro ou texto..." required>
+			<label for="read-file">Enviar arquivo (PDF ou imagem)</label>
+			<input id="read-file" type="file" accept="application/pdf,image/*">
+			<p class="hint">Ou, em vez de enviar um arquivo, cole um link abaixo.</p>
 			<label for="read-link">Link do arquivo ou site</label>
-			<input id="read-link" type="url" placeholder="https://..." required>
+			<input id="read-link" type="url" placeholder="https://...">
+			<p id="read-form-error" class="lock-error" aria-live="polite"></p>
 			<div class="dialog-actions"><button type="submit">Adicionar leitura</button></div>
 		</form>
 	</dialog>
@@ -57,6 +61,8 @@
 		const readForm = document.querySelector('#read-form');
 		const readName = document.querySelector('#read-name');
 		const readLink = document.querySelector('#read-link');
+		const readFile = document.querySelector('#read-file');
+		const readFormError = document.querySelector('#read-form-error');
 		const readDetailDialog = document.querySelector('#read-detail-dialog');
 		const detailReadTitle = document.querySelector('#detail-read-title');
 		const detailReadLink = document.querySelector('#detail-read-link');
@@ -69,6 +75,10 @@
 
 		function escapeHtml(text) {
 			return text.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+		}
+
+		function sanitizeFileName(name) {
+			return name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
 		}
 
 		async function renderReads() {
@@ -87,7 +97,12 @@
 			readDetailDialog.showModal();
 		}
 
-		document.querySelector('#add-read').addEventListener('click', () => { readDialog.showModal(); readName.focus(); });
+		document.querySelector('#add-read').addEventListener('click', () => {
+			readForm.reset();
+			readFormError.textContent = '';
+			readDialog.showModal();
+			readName.focus();
+		});
 		document.querySelector('#close-read-dialog').addEventListener('click', () => readDialog.close());
 		readDialog.addEventListener('click', (event) => { if (event.target === readDialog) readDialog.close(); });
 		readGrid.addEventListener('click', (event) => {
@@ -104,17 +119,50 @@
 		document.querySelector('#close-read-detail').addEventListener('click', () => readDetailDialog.close());
 		readDetailDialog.addEventListener('click', (event) => { if (event.target === readDetailDialog) readDetailDialog.close(); });
 		removeReadButton.addEventListener('click', async () => {
+			const read = currentReads.find((item) => item.id === selectedReadId);
 			const { error } = await db.from('reads').delete().eq('id', selectedReadId);
 			if (error) { console.error(error); return; }
+			const storageMarker = '/storage/v1/object/public/reads-files/';
+			if (read?.link?.includes(storageMarker)) {
+				const filePath = decodeURIComponent(read.link.split(storageMarker)[1]);
+				await db.storage.from('reads-files').remove([filePath]);
+			}
 			readDetailDialog.close();
 			renderReads();
 		});
 		readForm.addEventListener('submit', async (event) => {
 			event.preventDefault();
-			const { error } = await db.from('reads').insert({ name: readName.value.trim(), link: readLink.value.trim() });
-			if (error) { console.error(error); return; }
-			readName.value = '';
-			readLink.value = '';
+			const name = readName.value.trim();
+			const file = readFile.files[0];
+			let link = readLink.value.trim();
+
+			if (!file && !link) {
+				readFormError.textContent = 'Envie um arquivo ou cole um link.';
+				return;
+			}
+
+			const submitButton = readForm.querySelector('button[type="submit"]');
+			submitButton.disabled = true;
+			submitButton.textContent = file ? 'Enviando arquivo...' : 'Adicionando...';
+			readFormError.textContent = '';
+
+			if (file) {
+				const filePath = `${Date.now()}-${sanitizeFileName(file.name)}`;
+				const { error: uploadError } = await db.storage.from('reads-files').upload(filePath, file);
+				if (uploadError) {
+					console.error(uploadError);
+					readFormError.textContent = 'Erro ao enviar arquivo.';
+					submitButton.disabled = false;
+					submitButton.textContent = 'Adicionar leitura';
+					return;
+				}
+				link = db.storage.from('reads-files').getPublicUrl(filePath).data.publicUrl;
+			}
+
+			const { error } = await db.from('reads').insert({ name, link });
+			submitButton.disabled = false;
+			submitButton.textContent = 'Adicionar leitura';
+			if (error) { console.error(error); readFormError.textContent = 'Erro ao salvar leitura.'; return; }
 			readDialog.close();
 			renderReads();
 		});
